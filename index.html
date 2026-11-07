@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HDFS Architecture Simulator</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7fa; color: #333; margin: 0; padding: 15px; }
+        .container { max-width: 650px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 6px 15px rgba(0,0,0,0.1); }
+        h2 { color: #0052cc; text-align: center; margin-top: 0; margin-bottom: 5px; }
+        p.subtitle { text-align: center; color: #666; font-size: 13px; margin-bottom: 20px; }
+        
+        /* Architecture Layout */
+        .arch-container { background: #eef2f5; padding: 15px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #d1d9e6; }
+        .row { display: flex; justify-content: center; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        
+        .node { background: white; border: 2px solid #b3d4ff; border-radius: 8px; padding: 12px; text-align: center; font-weight: bold; font-size: 14px; color: #0052cc; transition: all 0.3s; position: relative; width: 120px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .client-node { border-color: #718096; color: #4a5568; width: 100%; max-width: 250px; }
+        .master-node { border-color: #d69e2e; color: #975a16; background: #fffff0; }
+        
+        .rack { background: #fff; border: 2px dashed #a0aec0; border-radius: 8px; padding: 10px; width: 45%; min-width: 140px; text-align: center; }
+        .rack h4 { margin: 0 0 10px 0; font-size: 12px; color: #718096; text-transform: uppercase; }
+        .datanode { background: #e9f2ff; border: 2px solid #b3d4ff; border-radius: 6px; padding: 10px; margin-bottom: 8px; font-size: 13px; color: #0052cc; transition: all 0.3s; }
+        
+        /* Dynamic States */
+        .active-comm { background: #ebf8ff !important; border-color: #3182ce !important; box-shadow: 0 0 12px rgba(49, 130, 206, 0.4); transform: scale(1.05); }
+        .active-write { background: #f0fff4 !important; border-color: #38a169 !important; color: #22543d !important; box-shadow: 0 0 12px rgba(56, 161, 105, 0.4); }
+        
+        /* Data Block Badge */
+        .block { display: none; background: #38a169; color: white; font-size: 11px; padding: 3px 6px; border-radius: 4px; margin-top: 5px; font-weight: bold; animation: popIn 0.3s; }
+        @keyframes popIn { 0% { transform: scale(0); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+
+        /* Controls & Logs */
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        button { flex: 1; background-color: #0052cc; color: white; border: none; padding: 14px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold; }
+        button:active { background-color: #003d99; }
+        button:disabled { background-color: #a0aec0; cursor: not-allowed; }
+        button.reset-btn { background-color: #e53e3e; }
+        button.reset-btn:active { background-color: #c53030; }
+
+        .log-panel { background: #2d3748; color: #48bb78; font-family: monospace; font-size: 14px; padding: 15px; border-radius: 8px; min-height: 80px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        .log-panel span { color: #e2e8f0; }
+
+        .footer { text-align: center; margin-top: 30px; font-size: 13px; color: #777; font-weight: bold; line-height: 1.6; border-top: 1px solid #eee; padding-top: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🏗️ HDFS Architecture</h2>
+    <p class="subtitle">Step-by-step visualization of the HDFS Write Pipeline & Rack Awareness.</p>
+    
+    <div class="arch-container">
+        <!-- Client -->
+        <div class="row">
+            <div class="node client-node" id="client">💻 HDFS Client</div>
+        </div>
+        
+        <!-- Master Nodes -->
+        <div class="row">
+            <div class="node master-node" id="namenode">🧠 NameNode<br><span style="font-size:10px; font-weight:normal;">(Metadata & IPs)</span></div>
+            <div class="node master-node" id="sec-namenode">⚙️ Sec. NameNode<br><span style="font-size:10px; font-weight:normal;">(FsImage Checkpoint)</span></div>
+        </div>
+
+        <!-- Worker Nodes (Racks) -->
+        <div class="row" style="align-items: flex-start;">
+            <div class="rack" id="rack1">
+                <h4>Rack 1 (Local)</h4>
+                <div class="datanode" id="dn1">DataNode 1<div class="block" id="blk-dn1">Block A</div></div>
+                <div class="datanode" id="dn2">DataNode 2<div class="block" id="blk-dn2">Block A (Rep 1)</div></div>
+            </div>
+            <div class="rack" id="rack2">
+                <h4>Rack 2 (Remote)</h4>
+                <div class="datanode" id="dn3">DataNode 3<div class="block" id="blk-dn3">Block A (Rep 2)</div></div>
+                <div class="datanode" id="dn4">DataNode 4</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="log-panel" id="logText">
+        <span>System Ready.</span><br>Click "Next Step" to see how a Client writes a file into HDFS.
+    </div>
+
+    <div class="controls" style="margin-top: 15px;">
+        <button onclick="nextStep()" id="nextBtn">Next Step ➡️</button>
+        <button onclick="resetSim()" class="reset-btn">Reset</button>
+    </div>
+
+    <div class="footer">
+        Developed by Abhay Mirashi<br>
+        All rights reserved with admin
+    </div>
+</div>
+
+<script>
+    let step = 0;
+    
+    function clearHighlights() {
+        document.querySelectorAll('.node, .datanode').forEach(el => {
+            el.classList.remove('active-comm', 'active-write');
+        });
+    }
+
+    function nextStep() {
+        step++;
+        const log = document.getElementById('logText');
+        const client = document.getElementById('client');
+        const nn = document.getElementById('namenode');
+        const dn1 = document.getElementById('dn1');
+        const dn2 = document.getElementById('dn2');
+        const dn3 = document.getElementById('dn3');
+        const btn = document.getElementById('nextBtn');
+
+        clearHighlights();
+
+        if (step === 1) {
+            client.classList.add('active-comm');
+            nn.classList.add('active-comm');
+            log.innerHTML = `<span>Step 1: Request</span><br>Client sends a create() request to the NameNode. "I want to save a 128MB file."`;
+        } 
+        else if (step === 2) {
+            client.classList.add('active-comm');
+            nn.classList.add('active-comm');
+            log.innerHTML = `<span>Step 2: Metadata & IPs</span><br>NameNode checks permissions, logs the metadata, and gives the Client the IPs of DataNodes 1, 2, and 3.`;
+        }
+        else if (step === 3) {
+            client.classList.add('active-write');
+            dn1.classList.add('active-write');
+            document.getElementById('blk-dn1').style.display = 'inline-block';
+            log.innerHTML = `<span>Step 3: Write Pipeline Starts</span><br>Client streams Data Block A directly to DataNode 1 in Rack 1. (Client bypasses NameNode for data transfer).`;
+        }
+        else if (step === 4) {
+            dn1.classList.add('active-write');
+            dn2.classList.add('active-write');
+            document.getElementById('blk-dn2').style.display = 'inline-block';
+            log.innerHTML = `<span>Step 4: Intra-Rack Replication</span><br>DataNode 1 pipelines a replica of Block A to DataNode 2 (which is in the same local Rack 1).`;
+        }
+        else if (step === 5) {
+            dn2.classList.add('active-write');
+            dn3.classList.add('active-write');
+            document.getElementById('blk-dn3').style.display = 'inline-block';
+            log.innerHTML = `<span>Step 5: Rack Awareness</span><br>DataNode 2 pipelines the final replica to DataNode 3 in a DIFFERENT rack (Rack 2) to ensure survival if Rack 1's switch fails.`;
+        }
+        else if (step === 6) {
+            dn3.classList.add('active-comm');
+            nn.classList.add('active-comm');
+            log.innerHTML = `<span>Step 6: Acknowledgments & Heartbeats</span><br>Acks flow back to the Client. DataNodes send Block Reports to NameNode. Write is successful!`;
+            btn.disabled = true;
+            btn.innerText = "Simulation Complete ✅";
+        }
+    }
+
+    function resetSim() {
+        step = 0;
+        clearHighlights();
+        document.querySelectorAll('.block').forEach(el => el.style.display = 'none');
+        document.getElementById('logText').innerHTML = `<span>System Ready.</span><br>Click "Next Step" to see how a Client writes a file into HDFS.`;
+        const btn = document.getElementById('nextBtn');
+        btn.disabled = false;
+        btn.innerText = "Next Step ➡️";
+    }
+</script>
+</body>
+</html>
+
